@@ -265,6 +265,8 @@ input,textarea,select{font-family:inherit;}
 #lightbox.show{display:flex;}
 #lightbox img{max-width:100%; max-height:100%; border-radius:8px;}
 
+#mobileMenuBtn{display:none;}
+#sidebarBackdrop{display:none;}
 @media (max-width:760px){
   #sidebar{position:fixed; z-index:150; height:100%; width:82vw; max-width:320px; transform:translateX(-100%); transition:.25s; box-shadow:2px 0 20px rgba(0,0,0,.25);}
   #sidebar.open{transform:translateX(0);}
@@ -283,6 +285,13 @@ input,textarea,select{font-family:inherit;}
   .onboard-card{padding:22px;}
   .round-btn{width:44px; height:44px;}
   #msgInput{font-size:16px;} /* prevents iOS auto-zoom on focus */
+  #mobileMenuBtn{
+    display:flex; position:fixed; top:12px; left:12px; z-index:160;
+    background:var(--surface); box-shadow:var(--shadow);
+  }
+  #sidebarBackdrop.show{
+    display:block; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:140;
+  }
 }
 
 .avatar-wrap{position:relative; display:inline-flex; flex-shrink:0;}
@@ -299,11 +308,13 @@ input,textarea,select{font-family:inherit;}
 </head>
 <body data-theme="light">
 <div id="app">
+  <button class="icon-btn" id="mobileMenuBtn">☰</button>
+  <div id="sidebarBackdrop"></div>
 
   <!-- SIDEBAR -->
   <div id="sidebar">
     <div class="sb-header">
-      <button class="icon-btn" id="closeSidebarBtn" style="display:none;">✕</button>
+      <button class="icon-btn" id="closeSidebarBtn">✕</button>
       <div class="sb-brand">Digital Pigeon</div>
     </div>
     <div class="sb-me" id="sbMe">
@@ -327,7 +338,6 @@ input,textarea,select{font-family:inherit;}
     </div>
     <div id="chatArea" style="display:none; flex-direction:column; height:100%;">
       <div class="chat-header">
-        <button class="icon-btn" id="openSidebarBtn" style="display:none;">☰</button>
         <div class="room-badge" id="chBadge"></div>
         <div style="min-width:0;">
           <div class="ch-title" id="chTitle"></div>
@@ -766,7 +776,6 @@ function finishBoot(){
   renderRoomList();
   bindEvents();
   updateComposerHint();
-  if(window.innerWidth<=760){ $('openSidebarBtn').style.display='flex'; $('closeSidebarBtn').style.display='flex'; }
 }
 
 /* ===================== ONBOARDING ===================== */
@@ -951,7 +960,7 @@ async function openRoom(code){
   $('chatArea').style.display='flex';
   $('messages').innerHTML='';
   renderRoomList();
-  if(window.innerWidth<=760) $('sidebar').classList.remove('open');
+  $('sidebar').classList.remove('open'); $('sidebarBackdrop').classList.remove('show');
   await sset(`room:${code}:member:${profile.id}`, JSON.stringify({
     id:profile.id, name:profile.name, avatar:profile.avatar||'', bio:profile.bio||'', font:profile.font, frame:profile.frame||null, lastSeen:Date.now()
   }), true);
@@ -1499,8 +1508,9 @@ function bindEvents(){
     };
   });
 
-  $('openSidebarBtn').onclick = ()=> $('sidebar').classList.add('open');
-  $('closeSidebarBtn').onclick = ()=> $('sidebar').classList.remove('open');
+  $('mobileMenuBtn').onclick = ()=>{ $('sidebar').classList.add('open'); $('sidebarBackdrop').classList.add('show'); };
+  $('closeSidebarBtn').onclick = ()=>{ $('sidebar').classList.remove('open'); $('sidebarBackdrop').classList.remove('show'); };
+  $('sidebarBackdrop').onclick = ()=>{ $('sidebar').classList.remove('open'); $('sidebarBackdrop').classList.remove('show'); };
 
   $('setAvatarPicker').onclick = ()=> { $('avatarInput').dataset.mode='settings'; $('avatarInput').click(); };
   $('avatarInput').addEventListener('change', async e=>{
