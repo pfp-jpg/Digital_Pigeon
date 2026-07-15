@@ -455,6 +455,16 @@ input,textarea,select{font-family:inherit;}
         <div class="avatar-picker" id="setAvatarPicker" style="margin-bottom:16px;">＋</div>
         <div class="field"><label>名前</label><input type="text" id="setName" maxlength="24"></div>
         <div class="field"><label>詳細</label><textarea id="setBio" maxlength="300"></textarea></div>
+        <div class="section-label">プロフィール表示フォント</div>
+        <div class="hint" style="margin-bottom:8px;">名前・詳細やチャットの吹き出しに使われるフォントです</div>
+        <div class="font-list" id="profileFontList"></div>
+        <div class="font-list" id="customFontListProfile" style="margin-top:8px;"></div>
+        <div class="section-label">表示色</div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <input type="color" id="profileColorInput" value="#2B2620">
+          <button class="btn-primary" id="resetProfileColorBtn" style="width:auto; padding:0 14px; background:var(--surface2); color:var(--text); border:1px solid var(--border);">既定に戻す</button>
+        </div>
+        <div class="hint">名前やプロフィール文章の文字色です</div>
         <div class="section-label">アイコンフレーム（任意）</div>
         <div class="frame-preview-box" id="framePreviewBox"></div>
         <div style="display:flex; gap:8px;">
@@ -475,14 +485,16 @@ input,textarea,select{font-family:inherit;}
         </div>
       </div>
       <div class="tab-pane" id="pane-font">
-        <div class="section-label">フォールバックフォント（必須・初期フォントから確定選択）</div>
+        <div class="section-label">システムフォント（アプリ全体の文字）</div>
+        <div class="hint" style="margin-bottom:8px;">サイドバーやボタンなど、アプリ全体の表示に使うフォントです（プロフィール表示は別設定です）</div>
+        <div class="font-list" id="systemFontList"></div>
+        <div class="font-list" id="customFontListSystem" style="margin-top:8px;"></div>
+        <div class="section-label">バックアップフォント（必須・初期フォントから確定選択）</div>
+        <div class="hint" style="margin-bottom:8px;">カスタムフォントが対応していない文字（日本語など）を表示する際の保険用フォントです</div>
         <div class="font-list" id="fallbackFontList"></div>
-        <div class="section-label">プロフィール表示フォント</div>
-        <div class="font-list" id="displayFontList"></div>
         <div class="section-label">カスタムフォントをインポート</div>
         <button class="btn-primary" id="importFontBtn" style="background:var(--surface2); color:var(--text); border:1px solid var(--border);">＋ フォントファイルを追加 (.ttf/.otf/.woff)</button>
-        <div class="hint">英語限定フォントの場合、日本語部分はフォールバックフォントで表示されます</div>
-        <div class="font-list" id="customFontList" style="margin-top:10px;"></div>
+        <div class="hint">英語限定フォントの場合、日本語部分はバックアップフォントで表示されます</div>
         <button class="btn-primary" id="saveFontBtn" style="margin-top:18px;">設定を保存してフォントを更新</button>
         <div class="hint" id="fontSaveHint" style="text-align:center;"></div>
       </div>
@@ -671,8 +683,8 @@ function resolveFontStack(fontRef){
   return fontCssById(fontRef);
 }
 function applyUiFont(){
-  if(!profile) return;
-  document.body.style.setProperty('--font-ui', resolveFontStack(profile.font));
+  if(!settings) return;
+  document.body.style.setProperty('--font-ui', resolveFontStack(settings.systemFont));
 }
 
 /* ===================== STORAGE ADAPTER ===================== */
@@ -873,12 +885,14 @@ async function init(){
   const s = await sget('settings', false);
   const r = await sget('rooms', false);
 
-  settings = s ? JSON.parse(s) : {theme:'light', language:'ja', fallbackFont:'zenkurenaido', customFonts:[]};
+  settings = s ? JSON.parse(s) : {theme:'light', language:'ja', fallbackFont:'zenkurenaido', systemFont:'zenkurenaido', customFonts:[]};
   if(!settings.customTheme) settings.customTheme = Object.assign({}, DEFAULT_CUSTOM_THEME);
+  if(!settings.systemFont) settings.systemFont = settings.fallbackFont || 'zenkurenaido';
   rooms = r ? JSON.parse(r) : [];
 
   applyTheme();
   applyLanguage();
+  applyUiFont();
   (settings.customFonts||[]).forEach(cf=>injectCustomFont(cf.name, cf.dataUrl));
   bindEvents();
 
@@ -892,7 +906,6 @@ async function init(){
 
 function finishBoot(){
   $('onboard').style.display='none';
-  applyUiFont();
   renderSidebarMe();
   renderRoomList();
   updateComposerHint();
@@ -947,7 +960,7 @@ async function syncProfileToAllRooms(){
   if(!profile) return;
   const payload = JSON.stringify({
     id:profile.id, name:profile.name, avatar:profile.avatar||'', bio:profile.bio||'', font:profile.font,
-    frame: profile.frame||null, lastSeen:Date.now()
+    frame: profile.frame||null, color: profile.color||null, lastSeen:Date.now()
   });
   for(const r of rooms){ await sset(`room:${r.code}:member:${profile.id}`, payload, true); }
   await syncAccountRecord();
@@ -1061,7 +1074,7 @@ async function joinRoom(){
   rooms.push({code, nickname:code});
   await sset('rooms', JSON.stringify(rooms), false);
   await sset(`room:${code}:member:${profile.id}`, JSON.stringify({
-    id:profile.id, name:profile.name, avatar:profile.avatar||'', bio:profile.bio||'', font:profile.font, frame:profile.frame||null, lastSeen:Date.now()
+    id:profile.id, name:profile.name, avatar:profile.avatar||'', bio:profile.bio||'', font:profile.font, frame:profile.frame||null, color:profile.color||null, lastSeen:Date.now()
   }), true);
   $('joinCodeInput').value='';
   renderRoomList();
@@ -1082,7 +1095,7 @@ async function openRoom(code){
   renderRoomList();
   $('sidebar').classList.remove('open'); $('sidebarBackdrop').classList.remove('show');
   await sset(`room:${code}:member:${profile.id}`, JSON.stringify({
-    id:profile.id, name:profile.name, avatar:profile.avatar||'', bio:profile.bio||'', font:profile.font, frame:profile.frame||null, lastSeen:Date.now()
+    id:profile.id, name:profile.name, avatar:profile.avatar||'', bio:profile.bio||'', font:profile.font, frame:profile.frame||null, color:profile.color||null, lastSeen:Date.now()
   }), true);
   await refreshRoomInfo(code);
   await refreshMessages(true);
@@ -1138,7 +1151,7 @@ async function openMemberList(){
       <div style="display:flex; align-items:center; gap:12px;">
         ${avatarHtml(m, 40)}
         <div>
-          <div style="font-weight:700; font-size:14px;">${escapeHtml(m.name||'')}${m.id===profile.id ? '（自分）' : ''}</div>
+          <div style="font-weight:700; font-size:14px; font-family:${resolveFontStack(m.font)};${m.color?`color:${m.color};`:''}">${escapeHtml(m.name||'')}${m.id===profile.id ? '（自分）' : ''}</div>
         </div>
       </div>
     </div>`).join('');
@@ -1244,13 +1257,14 @@ function buildMessageRow(m){
   const av = document.createElement('div');
   av.innerHTML = avatarHtml(person, 60);
   av.style.cursor = 'pointer';
-  av.onclick = ()=> showProfileFor(m.userId, {name:person.name, avatar:person.avatar, bio:person.bio, font:person.font, frame:person.frame});
+  av.onclick = ()=> showProfileFor(m.userId, {name:person.name, avatar:person.avatar, bio:person.bio, font:person.font, frame:person.frame, color:person.color});
   const col = document.createElement('div');
   col.className='msg-col';
   const meta = document.createElement('div');
   meta.className='msg-meta';
   const time = new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  meta.innerHTML = `<span>${escapeHtml(person.name||'')}</span><span>${time}</span>`;
+  const nameColorAttr = person.color ? ` style="color:${person.color}"` : '';
+  meta.innerHTML = `<span${nameColorAttr}>${escapeHtml(person.name||'')}</span><span>${time}</span>`;
   if(isMe){
     const delBtn = document.createElement('button');
     delBtn.className = 'msg-del-btn';
@@ -1306,7 +1320,7 @@ async function sendMessage(){
   if(hasUploadingAttachments()){ toast('アップロード中です。少々お待ちください'); return; }
   const id = Date.now().toString(36).padStart(9,'0') + '_' + Math.random().toString(36).slice(2,8);
   const msg = {
-    id, userId:profile.id, name:profile.name, avatar:profile.avatar||'', font:profile.font, frame:profile.frame||null,
+    id, userId:profile.id, name:profile.name, avatar:profile.avatar||'', font:profile.font, frame:profile.frame||null, color:profile.color||null,
     text: text||'',
     files: pendingAttachments.map(a=> a.url
       ? {url:a.url, path:a.path, provider:a.provider, type:a.type, name:a.name}
@@ -1401,10 +1415,11 @@ async function showProfileFor(userId, fallbackData){
     if(raw){ try{ data = JSON.parse(raw); }catch(e){} }
   }
   const body = $('profileViewBody');
+  const colorStyle = data.color ? `color:${data.color};` : '';
   body.innerHTML = `
     <div style="display:flex;justify-content:center;">${avatarHtml(data, 120)}</div>
-    <div class="p-name" style="font-family:${resolveFontStack(data.font)}">${escapeHtml(data.name||'')}</div>
-    ${data.bio?`<div class="p-bio" style="font-family:${resolveFontStack(data.font)}">${escapeHtml(data.bio)}</div>`:''}
+    <div class="p-name" style="font-family:${resolveFontStack(data.font)};${colorStyle}">${escapeHtml(data.name||'')}</div>
+    ${data.bio?`<div class="p-bio" style="font-family:${resolveFontStack(data.font)};${colorStyle}">${escapeHtml(data.bio)}</div>`:''}
   `;
   $('profileModal').classList.remove('hidden');
 }
@@ -1460,16 +1475,22 @@ function buildFontLists(){
       <div class="radio-dot"></div>
     </div>`).join('');
   $('fallbackFontList').innerHTML = opts;
-  $('displayFontList').innerHTML = opts + '';
+  $('systemFontList').innerHTML = opts;
+  $('profileFontList').innerHTML = opts;
 }
 
-function renderCustomFontList(){
+function customFontOptionsHtml(){
   const list = settings.customFonts||[];
-  $('customFontList').innerHTML = list.map(cf=>`
+  return list.map(cf=>`
     <div class="font-option" data-customfont="${escapeHtml(cf.name)}">
       <div><div class="font-preview" style="font-family:'${cf.name}',sans-serif">${escapeHtml(cf.name)} Aa あア</div><div class="font-tag">カスタム</div></div>
       <div class="radio-dot"></div>
     </div>`).join('') || `<div class="hint">インポート済みのフォントはありません</div>`;
+}
+function renderCustomFontList(){
+  const html = customFontOptionsHtml();
+  $('customFontListSystem').innerHTML = html;
+  $('customFontListProfile').innerHTML = html;
 }
 
 function refreshSettingsUI(){
@@ -1484,15 +1505,25 @@ function refreshSettingsUI(){
   document.querySelectorAll('#fallbackFontList .font-option').forEach(el=>{
     el.classList.toggle('selected', el.dataset.font===settings.fallbackFont);
   });
-  // display/profile font (default + custom)
+  // system font (default + custom) - drives the whole app UI
+  const sysFont = settings.systemFont;
+  document.querySelectorAll('#systemFontList .font-option').forEach(el=>{
+    el.classList.toggle('selected', el.dataset.font===sysFont);
+  });
+  // profile display font (default + custom) - drives name/bio/chat bubbles
   const curFont = profile.font;
-  document.querySelectorAll('#displayFontList .font-option').forEach(el=>{
+  document.querySelectorAll('#profileFontList .font-option').forEach(el=>{
     el.classList.toggle('selected', el.dataset.font===curFont);
   });
   renderCustomFontList();
-  document.querySelectorAll('#customFontList .font-option').forEach(el=>{
+  document.querySelectorAll('#customFontListSystem .font-option').forEach(el=>{
+    el.classList.toggle('selected', ('custom:'+el.dataset.customfont)===sysFont);
+  });
+  document.querySelectorAll('#customFontListProfile .font-option').forEach(el=>{
     el.classList.toggle('selected', ('custom:'+el.dataset.customfont)===curFont);
   });
+  // profile display color
+  $('profileColorInput').value = profile.color || currentThemeTextColor();
   // lang
   $('langJa').classList.toggle('selected', settings.language==='ja');
   $('langEn').classList.toggle('selected', settings.language==='en');
@@ -1833,17 +1864,39 @@ function bindEvents(){
       if(currentRoom) refreshChatFonts();
     };
   });
-  document.querySelectorAll('#displayFontList .font-option').forEach(el=>{
+  document.querySelectorAll('#systemFontList .font-option').forEach(el=>{
+    el.onclick = async ()=>{
+      settings.systemFont = el.dataset.font;
+      await sset('settings', JSON.stringify(settings), false);
+      applyUiFont();
+      refreshSettingsUI();
+    };
+  });
+  document.querySelectorAll('#profileFontList .font-option').forEach(el=>{
     el.onclick = async ()=>{
       profile.font = el.dataset.font;
       await sset('profile', JSON.stringify(profile), false);
       await syncProfileToAllRooms();
-      applyUiFont();
       renderSidebarMe();
       refreshSettingsUI();
       if(currentRoom) refreshChatFonts();
     };
   });
+
+  $('profileColorInput').addEventListener('change', async ()=>{
+    profile.color = $('profileColorInput').value;
+    await sset('profile', JSON.stringify(profile), false);
+    await syncProfileToAllRooms();
+    if(currentRoom) rerenderAllMessages();
+  });
+  $('resetProfileColorBtn').onclick = async ()=>{
+    profile.color = null;
+    await sset('profile', JSON.stringify(profile), false);
+    await syncProfileToAllRooms();
+    $('profileColorInput').value = currentThemeTextColor();
+    if(currentRoom) rerenderAllMessages();
+    toast('既定の色に戻しました');
+  };
 
   $('saveFontBtn').onclick = async ()=>{
     await sset('settings', JSON.stringify(settings), false);
@@ -1872,7 +1925,7 @@ function bindEvents(){
       const ok = await sset('settings', JSON.stringify(settings), false);
       if(!ok){ toast('保存に失敗しました（ファイルが大きい可能性があります）'); settings.customFonts.pop(); return; }
       refreshSettingsUI();
-      toast('フォントを追加しました。プロフィールフォントから選択できます');
+      toast('フォントを追加しました。システムフォント／プロフィール表示フォントから選択できます');
     };
     reader.readAsDataURL(file);
     e.target.value='';
@@ -1900,17 +1953,29 @@ function bindEvents(){
   });
 
   document.addEventListener('click', e=>{
-    const cfOpt = e.target.closest('#customFontList .font-option');
-    if(cfOpt){
-      profile.font = 'custom:'+cfOpt.dataset.customfont;
+    const sysOpt = e.target.closest('#customFontListSystem .font-option');
+    if(sysOpt){
+      settings.systemFont = 'custom:'+sysOpt.dataset.customfont;
+      sset('settings', JSON.stringify(settings), false);
+      applyUiFont();
+      refreshSettingsUI();
+      return;
+    }
+    const profOpt = e.target.closest('#customFontListProfile .font-option');
+    if(profOpt){
+      profile.font = 'custom:'+profOpt.dataset.customfont;
       sset('profile', JSON.stringify(profile), false);
       syncProfileToAllRooms();
-      applyUiFont();
       renderSidebarMe();
       refreshSettingsUI();
       if(currentRoom) refreshChatFonts();
     }
   });
+}
+
+function currentThemeTextColor(){
+  const v = getComputedStyle(document.body).getPropertyValue('--text').trim();
+  return v || '#2b2620';
 }
 
 function refreshChatFonts(){
@@ -1931,7 +1996,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
       bio: $('obBio').value.trim(),
       font: $('obFont').value,
       avatar: obAvatarData || '',
-      frame: null
+      frame: null,
+      color: null
     };
     await sset('profile', JSON.stringify(profile), false);
     await syncAccountRecord();
